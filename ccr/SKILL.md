@@ -48,9 +48,11 @@ Evaluate the code against these four dimensions:
 1. **Identify the scope.** Determine what code is "recent" — typically the last logical change or diff (`git diff`, staged changes, or the files just edited in-session). If scope is unclear, ask before proceeding.
 2. **Re-derive the requirement.** State in your own words what this code was supposed to accomplish. If you can't, the requirement was unclear and that's your first finding.
 3. **Trace every change.** For each modified section, ask "does this trace to the requirement?" Flag anything that doesn't.
-4. **Adversarial walkthrough.** Mentally execute the code with hostile inputs. Document what breaks.
-5. **Simplification pass.** Propose the simplest version that still satisfies the requirement. Compare to what was written.
-6. **Challenge the implicit.** Every "obviously" and "of course" in the code is a hidden assumption. Surface them.
+4. **Read beyond the diff.** A diff hunk lies by omission. Read the full function, its callers, and the types it touches before claiming a bug. Most false findings come from reviewing hunks in isolation.
+5. **Adversarial walkthrough.** Mentally execute the code with hostile inputs. Document what breaks.
+6. **Simplification pass.** Propose the simplest version that still satisfies the requirement. Compare to what was written.
+7. **Challenge the implicit.** Every "obviously" and "of course" in the code is a hidden assumption. Surface them.
+8. **Verify cheaply when possible.** If the project has fast checks (compiler, linter, test suite), run them and fold failures into findings. Don't claim "this won't compile" — prove it.
 
 ## Output Format
 
@@ -121,7 +123,7 @@ The review itself is a single pass. The loop is driven by the user: they fix, th
 
 ## Anti-Patterns to Avoid
 
-- **Don't rubber-stamp.** If you have no findings, double-check — you probably missed something.
+- **Don't rubber-stamp — but don't fabricate either.** Every finding must be verified against the actual current code with a `file_path:line_number` citation. A hallucinated bug costs more trust than a missed one. If the full methodology genuinely surfaces nothing, `APPROVED` is a legitimate verdict.
 - **Don't nitpick style** when substance matters more.
 - **Don't suggest rewrites** that violate surgical-changes principles yourself.
 - **Don't review code you weren't asked to review.**
