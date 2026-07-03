@@ -10,6 +10,15 @@ Drive the PR through Codex review rounds until it approves. Typically 2–8 roun
 1. Identify the PR: from the arguments if given, else `gh pr view --json number,headRefName,url`. No PR for the current branch: stop and tell the user.
 2. `REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)` and `BOT="chatgpt-codex-connector"` (Codex's GitHub login).
 3. Confirm the working tree is on the PR's head branch and clean. Uncommitted changes: stop and ask the user before touching them.
+4. **Check for an existing unaddressed review before triggering anything new:**
+
+   ```bash
+   LATEST=$(gh api "repos/$REPO/pulls/$PR/reviews" --jq '[.[] | select(.user.login=="'"$BOT"'")] | last')
+   ```
+
+   If `LATEST` is non-empty and its body does **not** contain "Didn't find any major issues" (match loosely), Codex already left findings on this PR that were never actioned. Fix those first, using the same process as Step 5 below (read the cited code, fix surgically, reply to each inline thread with the commit SHA or a rebuttal, resolve the threads you fixed), and push as one commit. Do this *before* Step 1 — do not post a fresh "@codex review" yet and don't count this pass against the 10-round limit.
+
+   Once that pre-existing review is addressed (or if `LATEST` is empty / already clean), proceed to Step 1 to start the loop, which will trigger a fresh review against the current code.
 
 ## The Loop (max 10 rounds)
 
