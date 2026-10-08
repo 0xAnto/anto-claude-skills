@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shop admin</title>
+<!-- A demo design for check.mjs. It has no global reset on purpose: the tool must work without one. -->
+<style>
+  :root { --bg: #f4f7f4; --card: #fff; --ink: #1d2a24; --ink2: #5b6a62; --line: #d5ddd6; --accent: #1f7a5a; }
+  :root[data-theme="dark"] { --bg: #111815; --card: #18211d; --ink: #e9f1ec; --ink2: #9fb0a7; --line: #2a3731; --accent: #4cc597; }
+  body { margin: 0; font: 16px/1.5 Georgia, serif; background: var(--bg); color: var(--ink); }
+  [data-view] { max-width: 960px; margin: 0 auto; padding: 16px 24px 80px; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; }
+  h1, h2 { margin: 0 0 8px; }
+  a { color: var(--accent); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .card button, .card input[type=text] { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--accent); color: #fff; cursor: pointer; }
+  .card input[type=text] { background: var(--bg); color: var(--ink); cursor: text; }
+  ul.rows { list-style: none; margin: 0; padding: 0; }
+  ul.rows li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main id="stage">
+
+<section data-view="orders" data-ctx="view:orders">
+  <header data-name="Header">
+    <h1>Orders</h1>
+    <a id="help-link" href="#help">Help centre</a>
+  </header>
+  <div class="grid">
+    <section class="card" data-name="Order list">
+      <h2>Recent orders</h2>
+      <ul class="rows">
+        <li>1041 - Mina Okoro - $23.00</li>
+        <li>1042 - Ana Silva - $48.00</li>
+        <li>1043 - Jo Park - $112.50</li>
+      </ul>
+    </section>
+    <article class="card" id="order" data-name="Order detail"></article>
+  </div>
+</section>
+
+<section data-view="settings" data-ctx="view:settings">
+  <header data-name="Header"><h1>Settings</h1></header>
+  <form class="card" id="settings-form" data-name="Shop form">
+    <h2>Shop name</h2>
+    <p><input type="text" id="shop-name" value="Demo shop"> <button type="submit" id="save">Save settings</button></p>
+  </form>
+</section>
+
+</main>
+
+<script>
+/* The design script. Its names are the same as some names of the tool on purpose: the tool must not clash. */
+const $ = (s) => document.querySelector(s);
+const notes = "design notes", mode = "design mode";
+window.acted = { ship: 0, saved: 0 };
+
+const ORDERS = {
+  o1042: { no: "1042", who: "Ana Silva", total: "$48.00", status: "Paid" },
+  o1043: { no: "1043", who: "Jo Park", total: "$112.50", status: "Late" },
+};
+function renderOrder(id) {
+  const o = ORDERS[id], el = $("#order");
+  el.dataset.ctx = "order:" + id;   // the data of this part changes, so its context changes with it
+  el.innerHTML = `<h2>Order ${o.no}</h2>
+    <p>${o.who} - ${o.total}</p>
+    <p>Status: <b>${o.status}</b></p>
+    <p><button type="button" id="ship">Mark as shipped</button></p>
+    <p><label><input type="checkbox" id="notify"> Tell the customer</label></p>
+    <details id="more"><summary>Shipping notes</summary><p>Leave at the door.</p></details>`;
+  $("#ship").onclick = () => { window.acted.ship++; $("#ship").textContent = "Shipped"; };
+}
+$("#settings-form").addEventListener("submit", (ev) => { ev.preventDefault(); window.acted.saved++; });
+
+window.MOCKUP = {
+  title: "Shop admin",
+  key: "design-mockup-demo-v1",
+  views: { orders: "Orders", settings: "Settings" },
+  state: { label: "Order", options: { o1042: "Order 1042 (paid)", o1043: "Order 1043 (late)" }, views: ["orders"], set: renderOrder },
+};
+</script>
+<!-- @comment-tool -->
+</body>
+</html>

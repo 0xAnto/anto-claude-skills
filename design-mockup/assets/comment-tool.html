@@ -1,0 +1,281 @@
+<script>
+/* design-mockup comment tool, version 1.
+   Paste this whole block unchanged at the end of <body>, after the page script.
+   Set window.MOCKUP before this block. SKILL.md lists the fields.
+   The block adds its own style, toolbar, hint, comment popover, panel, and export dialog. */
+(() => {
+const C = Object.assign({ title: document.title, views: {}, theme: true }, window.MOCKUP);
+const KEY = C.key || "mockup-comments:" + document.title, THEME_KEY = KEY + ":theme";
+const stage = document.getElementById("stage");
+if (!stage) throw new Error("comment tool: the page has no #stage element");
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const st = C.state, viewIds = Object.keys(C.views);
+
+/* ---------- Style. The tool owns its reset, so it does not need the base CSS of the design. ---------- */
+const CSS = `
+.mk, .mk * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, sans-serif; letter-spacing: 0; }
+.mk { --mk-accent: #d6247f; --mk-ink: #141417; --mk-mute: #5a6079; --mk-line: #c9cfe0; }
+.mk[hidden], [data-view][hidden] { display: none !important; }
+#mk-bar { position: sticky; top: 0; z-index: 50; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 14px; background: #1c2233; color: #e9ecf5; font-size: 13px; line-height: 1.3; }
+#mk-bar > b { font-size: 12px; color: #9aa6c4; margin-right: 4px; }
+#mk-bar button, #mk-bar select { font-size: 13px; color: #e9ecf5; background: #2a3350; border: 1px solid #3a456b; border-radius: 6px; padding: 5px 10px; cursor: pointer; margin: 0; }
+#mk-bar button[aria-pressed=true] { background: var(--mk-accent); border-color: var(--mk-accent); color: #fff; }
+#mk-views { display: inline-flex; gap: 4px; flex-wrap: wrap; } #mk-bar .sp { flex: 1; } #mk-state { color: #9aa6c4; margin-left: 6px; }
+#mk-hint { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 45; margin: 0; padding: 9px 16px; border-radius: 999px; background: var(--mk-accent); color: #fff; font-size: 13px; line-height: 1.3; box-shadow: 0 6px 24px rgba(0,0,0,.3); max-width: calc(100vw - 24px); text-align: center; pointer-events: none; }
+#mk-hint kbd { font: 600 12px ui-monospace, monospace; background: rgba(255,255,255,.22); border-radius: 4px; padding: 1px 6px; }
+body.mk-on #stage, body.mk-on #stage * { cursor: crosshair !important; }
+#mk-pins { position: absolute; top: 0; left: 0; width: 0; height: 0; z-index: 40; }
+.mk-pin { position: absolute; transform: translate(-50%, -50%); min-width: 26px; height: 26px; margin: 0; border-radius: 13px; border: 2px solid #fff; background: var(--mk-accent); color: #fff; font: 700 12px/1 ui-sans-serif, system-ui; display: grid; place-items: center; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.35); padding: 0 6px; }
+.mk-pin.draft { background: #fff; color: var(--mk-accent); border-color: var(--mk-accent); } .mk-pin.hit { animation: mk-hit 1.2s ease-out 2; }
+@keyframes mk-hit { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--mk-accent) 70%, transparent); } 100% { box-shadow: 0 0 0 22px color-mix(in srgb, var(--mk-accent) 0%, transparent); } }
+#mk-hover { position: absolute; z-index: 39; pointer-events: none; border: 1.5px dashed var(--mk-accent); border-radius: 4px; background: color-mix(in srgb, var(--mk-accent) 7%, transparent); }
+#mk-pop { position: absolute; z-index: 60; width: 300px; background: #fff; color: var(--mk-ink); border: 1px solid var(--mk-line); border-radius: 10px; padding: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.28); font-size: 13px; line-height: 1.4; }
+#mk-pop-l { color: var(--mk-mute); display: block; margin: 2px 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#mk-pop textarea, #mk-export textarea { width: 100%; margin: 0; font-size: 14px; line-height: 1.4; color: var(--mk-ink); background: #fff; border: 1px solid var(--mk-line); border-radius: 6px; padding: 8px; resize: vertical; display: block; }
+.mk .mk-row { display: flex; gap: 6px; margin: 8px 0 0; align-items: center; } .mk-row .sp { flex: 1; }
+.mk .mk-b { font-size: 13px; color: var(--mk-ink); background: #fff; border: 1px solid var(--mk-line); border-radius: 6px; padding: 5px 10px; margin: 0; cursor: pointer; }
+.mk .mk-b.go { background: var(--mk-accent); border-color: var(--mk-accent); color: #fff; font-weight: 600; }
+#mk-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 340px; max-width: 92vw; z-index: 55; background: #fff; color: var(--mk-ink); border-left: 1px solid var(--mk-line); box-shadow: -12px 0 32px rgba(0,0,0,.18); display: flex; flex-direction: column; font-size: 13px; line-height: 1.4; }
+#mk-panel header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid #e2e6f0; font-weight: 700; font-size: 14px; }
+#mk-list { overflow: auto; flex: 1; margin: 0; padding: 0; list-style: none; } #mk-list li { border-bottom: 1px solid #e2e6f0; padding: 10px 14px; }
+#mk-list .go-to { all: unset; display: block; cursor: pointer; width: 100%; font: inherit; } #mk-list q { display: block; color: var(--mk-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; quotes: none; }
+#mk-list p { margin: 4px 0 6px; font-size: 14px; white-space: pre-wrap; } #mk-list .where { color: var(--mk-mute); }
+#mk-panel footer { display: flex; gap: 6px; padding: 10px 14px; border-top: 1px solid #e2e6f0; }
+#mk-export { width: min(640px, 92vw); border: 1px solid var(--mk-line); border-radius: 12px; padding: 16px; color: var(--mk-ink); background: #fff; font-size: 13px; }
+#mk-export p { margin: 0 0 8px; } #mk-export::backdrop { background: rgba(10,14,28,.5); }
+`;
+const style = document.createElement("style");
+style.id = "mk-style"; style.textContent = CSS; document.head.append(style);
+
+/* ---------- Markup. The bar goes first in <body>. The rest goes last. ---------- */
+document.body.insertAdjacentHTML("afterbegin", `
+<div id="mk-bar" class="mk" role="toolbar" aria-label="Mock-up controls">
+  <b>Mock-up</b><span id="mk-views"></span>
+  <label id="mk-state" hidden><span></span> <select></select></label>
+  <span class="sp"></span>
+  <button id="mk-theme"></button><button id="mk-mode" aria-pressed="true"></button><button id="mk-open">Comments (0)</button><button id="mk-copy">Copy all</button>
+</div>
+<p id="mk-hint" class="mk">Click any part of the page to add a comment. Press <kbd>C</kbd> to use the page.</p>`);
+document.body.insertAdjacentHTML("beforeend", `
+<div id="mk-pins" class="mk"></div>
+<div id="mk-hover" class="mk" hidden></div>
+<div id="mk-pop" class="mk" hidden>
+  <b id="mk-pop-n"></b><span id="mk-pop-l"></span>
+  <textarea id="mk-text" rows="4" placeholder="Your comment"></textarea>
+  <div class="mk-row"><button class="mk-b" id="mk-del">Delete</button><span class="sp"></span><button class="mk-b" id="mk-cancel">Cancel</button><button class="mk-b go" id="mk-save">Save</button></div>
+</div>
+<aside id="mk-panel" class="mk" hidden aria-label="Comments">
+  <header><span id="mk-count">Comments</span><span class="sp" style="flex:1"></span><button class="mk-b" id="mk-close">Close</button></header>
+  <ol id="mk-list"></ol>
+  <footer><button class="mk-b go" id="mk-copy2">Copy all</button><span style="flex:1"></span><button class="mk-b" id="mk-clear">Delete all</button></footer>
+</aside>
+<dialog id="mk-export" class="mk">
+  <p><b>Your comments.</b> <span id="mk-copied"></span></p>
+  <textarea id="mk-out" rows="14" readonly></textarea>
+  <form method="dialog" class="mk-row"><span class="sp"></span><button class="mk-b go">Close</button></form>
+</dialog>`);
+
+$("#mk-views").innerHTML = viewIds.length > 1 ? viewIds.map((id) => `<button data-mk-view="${esc(id)}">${esc(C.views[id])}</button>`).join("") : "";
+if (st) {
+  $("#mk-state > span").textContent = st.label || "State";
+  $("#mk-state select").innerHTML = Object.entries(st.options).map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+}
+$("#mk-theme").hidden = C.theme === false;
+
+/* ---------- State of the tool ---------- */
+let view = null, stateVal = null, mode = true, notes = [], draft = null, current = null, pulse = null;
+try { const s = JSON.parse(localStorage.getItem(KEY)); if (Array.isArray(s)) notes = s; } catch {}
+const store = () => { try { localStorage.setItem(KEY, JSON.stringify(notes)); } catch {} drawPins(); drawPanel(); };
+const themeNow = () => C.theme === false ? null : document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+const stateOn = () => !!st && (!st.views || st.views.includes(view));
+
+function setView(v) {
+  view = C.views[v] ? v : (viewIds[0] ?? null);
+  if (viewIds.length) for (const el of stage.querySelectorAll("[data-view]")) el.hidden = el.dataset.view !== view;
+  for (const b of $("#mk-views").children) b.setAttribute("aria-pressed", b.dataset.mkView === view);
+  $("#mk-state").hidden = !stateOn();
+  C.onView?.(view);
+  closePop(); scrollTo(0, 0);
+}
+function setState(v) {
+  if (!st) return;
+  stateVal = v in st.options ? v : Object.keys(st.options)[0];
+  $("#mk-state select").value = stateVal;
+  st.set?.(stateVal);
+  closePop();
+}
+function setTheme(t) {
+  t = t === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = t;
+  $("#mk-theme").textContent = t === "dark" ? "Light theme" : "Dark theme";
+  try { localStorage.setItem(THEME_KEY, t); } catch {}
+  C.onTheme?.(t); drawPins();
+}
+function setMode(on) {
+  mode = on; document.body.classList.toggle("mk-on", on);
+  $("#mk-mode").setAttribute("aria-pressed", on); $("#mk-mode").textContent = `Comment mode: ${on ? "on" : "off"}`;
+  if (!on) $("#mk-hover").hidden = true;
+  closePop();
+}
+
+/* ---------- Anchor. A comment stores the nearest [data-ctx] part, the path of child positions
+   below it, and the place in the element. So the pin follows the element when the layout changes. ---------- */
+function anchor(el, x, y) {
+  const root = el.closest("[data-ctx]") || stage, path = [];
+  for (let n = el; n !== root; n = n.parentElement) path.unshift([...n.parentElement.children].indexOf(n));
+  const r = el.getBoundingClientRect();
+  return { ctx: root.dataset.ctx || "stage", path, fx: +((x - r.left) / (r.width || 1)).toFixed(3), fy: +((y - r.top) / (r.height || 1)).toFixed(3) };
+}
+function place(n) {   // the place of a comment in the viewport, or null when its element is not on the page
+  const roots = n.ctx === "stage" ? [stage] : [...document.querySelectorAll("[data-ctx]")].filter((e) => e.dataset.ctx === n.ctx);
+  for (let el of roots) {
+    for (const i of n.path) el = el?.children[i];
+    const r = el?.getBoundingClientRect();
+    if (r && (r.width || r.height)) return { x: r.left + n.fx * r.width, y: r.top + n.fy * r.height };
+  }
+  return null;
+}
+const labelOf = (el) => (el.getAttribute("aria-label") || el.placeholder || el.alt || el.innerText || el.textContent || el.title || "").replace(/\s+/g, " ").trim().slice(0, 90);
+const tagOf = (el) => el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + (el.classList[0] ? "." + el.classList[0] : "");
+
+/* ---------- Draw ---------- */
+function drawPins() {   // one pin element for each comment: a redraw moves it and does not replace it
+  const layer = $("#mk-pins"), o = layer.getBoundingClientRect(), seen = new Set();
+  for (const n of draft ? [...notes, draft] : notes) {
+    const at = place(n); if (!at) continue;
+    seen.add(String(n.n));
+    let b = layer.querySelector(`[data-n="${n.n}"]`);
+    if (!b) { b = document.createElement("button"); b.dataset.n = n.n; b.textContent = n.n; layer.append(b); }
+    b.className = "mk-pin" + (n === draft ? " draft" : "") + (n.n === pulse ? " hit" : "");
+    b.title = n.text || "New comment";
+    b.style.left = at.x - o.left + "px"; b.style.top = at.y - o.top + "px";
+  }
+  for (const b of [...layer.children]) if (!seen.has(b.dataset.n)) b.remove();
+  $("#mk-open").textContent = `Comments (${notes.length})`;
+  $("#mk-hint").hidden = !mode || notes.length > 0 || !!draft;
+}
+function drawPanel() {
+  $("#mk-count").textContent = `Comments (${notes.length})`;
+  $("#mk-list").innerHTML = notes.map((n) => `<li><button class="go-to" data-go="${n.n}"><b>#${n.n}</b> <span class="where">${esc(n.where)}</span><q>${esc(n.label || n.tag)}</q><p>${esc(n.text)}</p></button><button class="mk-b" data-rm="${n.n}">Delete</button></li>`).join("")
+    || `<li>No comments yet. Turn comment mode on and click any part of the page.</li>`;
+}
+
+/* ---------- The comment popover ---------- */
+function openPop(n, cx, cy) {   // cx and cy are viewport coordinates
+  current = n; draft = notes.includes(n) ? null : n;
+  const pop = $("#mk-pop"); pop.hidden = false;
+  $("#mk-pop-n").textContent = `Comment #${n.n}`; $("#mk-pop-l").textContent = `${n.where}${n.label ? ` - "${n.label}"` : ""}`;
+  $("#mk-text").value = n.text || ""; $("#mk-del").hidden = !notes.includes(n);
+  const o = $("#mk-pins").getBoundingClientRect(), h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(cx + 16, document.documentElement.clientWidth - 312)) - o.left + "px";
+  pop.style.top = (cy + 16 + h > innerHeight ? Math.max(8, cy - h - 16) : cy + 16) - o.top + "px";
+  drawPins(); $("#mk-text").focus();
+}
+function closePop() { current = draft = null; $("#mk-pop").hidden = true; drawPins(); }
+function savePop() {   // an empty comment is dropped
+  const text = $("#mk-text").value.trim();
+  if (current && text) { current.text = text; if (!notes.includes(current)) notes.push(current); store(); }
+  closePop();
+}
+function remove(num) { notes = notes.filter((n) => n.n != num); store(); closePop(); }
+
+/* ---------- Export ---------- */
+function exportText() {
+  const stateLabel = (v) => st?.options?.[v] ?? v;
+  return `Comments on the mock-up "${C.title}" (${notes.length})\n\n` + notes.map((n) =>
+    `#${n.n} [${n.where}]${n.state != null ? ` (state: ${stateLabel(n.state)})` : ""}${n.theme ? ` (${n.theme} theme)` : ""}\n  On: "${n.label || n.tag}" <${n.tag}>\n  Comment: ${n.text.replace(/\n/g, "\n    ")}`).join("\n\n");
+}
+async function copyAll() {
+  const text = exportText(), out = $("#mk-out"), msg = $("#mk-copied");
+  out.value = text; msg.textContent = "";
+  if (!$("#mk-export").open) $("#mk-export").showModal();
+  out.select();
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch { try { ok = document.execCommand("copy"); } catch {} }
+  msg.textContent = ok ? "Copied. Paste the text into the chat." : "The browser blocks the clipboard. Press Cmd+C or Ctrl+C to copy the text. Then paste it into the chat.";
+}
+
+/* ---------- Events. Comment mode: a click on the stage adds a comment and does nothing else. ---------- */
+document.addEventListener("click", (ev) => {
+  const t = ev.target;
+  if (!mode || !t.closest || t.closest(".mk") || !stage.contains(t)) return;
+  ev.preventDefault(); ev.stopPropagation();
+  if (current) savePop();
+  const block = t.closest("[data-name]")?.dataset.name, a = anchor(t, ev.clientX, ev.clientY);
+  openPop({
+    n: 1 + Math.max(0, ...notes.map((x) => x.n)), ...a, view, state: stateOn() ? stateVal : null, theme: themeNow(),
+    where: [C.views[view], block].filter(Boolean).join(" > ") || "page", label: labelOf(t), tag: tagOf(t), text: "",
+  }, ev.clientX, ev.clientY);
+}, true);
+document.addEventListener("mousedown", (ev) => { if (mode && ev.target.closest && !ev.target.closest(".mk") && stage.contains(ev.target)) ev.preventDefault(); }, true);
+document.addEventListener("mousemove", (ev) => {
+  const t = ev.target, h = $("#mk-hover");
+  if (!mode || !t.closest || t.closest(".mk") || !stage.contains(t) || t === stage || t.matches("[data-view]")) { h.hidden = true; return; }
+  const r = t.getBoundingClientRect(), o = $("#mk-pins").getBoundingClientRect();
+  Object.assign(h.style, { left: r.left - o.left + "px", top: r.top - o.top + "px", width: r.width + "px", height: r.height + "px" });
+  h.hidden = false;
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") { closePop(); $("#mk-panel").hidden = true; return; }
+  if (ev.target.id === "mk-text" && ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); return savePop(); }
+  if (/^(input|textarea|select)$/i.test(ev.target.tagName) || ev.target.isContentEditable || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (ev.key.toLowerCase() === "c") setMode(!mode);
+});
+$("#mk-pins").addEventListener("click", (ev) => {
+  const n = notes.find((x) => x.n == ev.target.dataset.n);
+  if (n) { const r = ev.target.getBoundingClientRect(); openPop(n, r.left, r.top); }
+});
+$("#mk-list").addEventListener("click", (ev) => {
+  const rm = ev.target.closest("[data-rm]"), go = ev.target.closest("[data-go]");
+  if (rm) return remove(rm.dataset.rm);
+  const n = go && notes.find((x) => x.n == go.dataset.go);
+  if (!n) return;
+  setView(n.view);
+  if (n.state != null) setState(n.state);
+  pulse = n.n; setTimeout(() => { pulse = null; drawPins(); }, 2500);
+  requestAnimationFrame(() => {
+    const at = place(n); if (!at) return;
+    scrollTo({ top: at.y + scrollY - innerHeight / 3, behavior: "smooth" });
+    drawPins();
+  });
+});
+$("#mk-views").addEventListener("click", (ev) => ev.target.dataset.mkView && setView(ev.target.dataset.mkView));
+$("#mk-state select").addEventListener("change", (ev) => setState(ev.target.value));
+$("#mk-theme").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+$("#mk-mode").addEventListener("click", () => setMode(!mode));
+$("#mk-open").addEventListener("click", () => { $("#mk-panel").hidden = !$("#mk-panel").hidden; });
+$("#mk-close").addEventListener("click", () => { $("#mk-panel").hidden = true; });
+$("#mk-copy").addEventListener("click", copyAll); $("#mk-copy2").addEventListener("click", copyAll);
+$("#mk-clear").addEventListener("click", () => { if (confirm("Delete all comments?")) { notes = []; store(); } });
+$("#mk-save").addEventListener("click", savePop); $("#mk-cancel").addEventListener("click", closePop);
+$("#mk-del").addEventListener("click", () => current && remove(current.n));
+
+/* Redraw the pins when the page changes: a size change, a DOM change, a row that opens, a transition, a font. */
+let queued = false;
+const redraw = () => { if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; drawPins(); }); } };
+new ResizeObserver(redraw).observe(stage);
+new MutationObserver(redraw).observe(stage, { subtree: true, childList: true, attributes: true, characterData: true });
+document.addEventListener("toggle", redraw, true);
+document.addEventListener("transitionend", redraw, true);
+document.fonts?.ready.then(redraw);
+
+/* ---------- Start. The address chooses the state: #view=settings&theme=dark&state=late&comment=off ---------- */
+function applyHash(first) {
+  const q = new URLSearchParams(location.hash.slice(1));
+  if (C.theme !== false) {
+    let saved = null; try { saved = localStorage.getItem(THEME_KEY); } catch {}
+    const t = q.get("theme") || (first && (saved || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")));
+    if (t) setTheme(t);
+  }
+  if (st && (first || q.has("state"))) setState(q.get("state"));
+  if (first || q.has("view")) setView(q.get("view"));
+  if (first || q.has("comment")) setMode(q.get("comment") !== "off");
+}
+addEventListener("hashchange", () => applyHash(false));
+applyHash(true);
+drawPanel();
+
+window.mk = { redraw: drawPins, setView, setState, setMode };   // for a page script that must move the pins at once
+})();
+</script>
